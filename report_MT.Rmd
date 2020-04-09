@@ -1,0 +1,113 @@
+---
+title: Coursera Practical Machine Learning Project Report
+author: "Morteza Taiebat"
+
+---
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.  
+
+# Problem Statement
+In this project, we will use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants to *predict* the manner in which they performed the exercise.  
+
+## Data Source
+The data for this exerise is supplied via the following link:
+http://groupware.les.inf.puc-rio.br/har
+
+
+# Initialization
+Load all required pacakges.
+```{r, cache = T}
+lapply(list('caret', 'rpart', 'rpart.plot', 'corrplot'), require, character.only = TRUE)
+```
+
+## Load the Data
+```{r, cache = T}
+train <- read.csv("./data/pml-training.csv")
+test <- read.csv("./data/pml-testing.csv")
+```
+The training data set contains 19622 observations and 160 variables, while the testing data set contains 20 observations and 160 variables. 
+
+The variable "classe"  in the training set is the outcome to predict. 
+
+## Data Cleaning 
+In this step, we will clean the data and remove observations with missing values as well as some meaningless variables.
+
+```{r, cache = T}
+train <- train[, colSums(is.na(train)) == 0] 
+classe <- train$classe
+trainRemove <- grepl("^X|timestamp|window", names(train))
+train <- train[, !trainRemove]
+trainCleaned <- train[, sapply(train, is.numeric)]
+trainCleaned$classe <- classe
+testRemove <- grepl("^X|timestamp|window", names(test))
+test <- test[, !testRemove]
+testCleaned <- test[, sapply(test, is.numeric)]
+```
+Now, the cleaned training data set contains 19622 observations and 53 variables, while the testing data set contains 20 observations and 53 variables. The "classe" variable is still in the cleaned training set.
+
+## Data Splitting
+Then, we can split the cleaned training set into a pure training data set (70%) and a validation data set (30%). We will use the validation data set to conduct cross validation in future steps.  
+```{r, cache = T}
+set.seed(22519)
+inTrain <- createDataPartition(trainCleaned$classe, p=0.70, list=F)
+trainData <- trainCleaned[inTrain, ]
+testData <- trainCleaned[-inTrain, ]
+```
+
+
+## Visualization of Correlation Matrix   
+```{r, cache = T}
+corrPlot <- cor(trainData[, -length(names(trainData))])
+corrplot(corrPlot, method="color")
+```
+
+
+# Training With **Decision Tree**
+We first fit a **Decision Tree** predictive model.
+```{r, cache=T}
+modelDecisionTree <- train(classe ~., method='rpart', data=trainData)
+```
+
+Prediction with the decision tree and output the confusion matrix follows. It appears that the result of the model has low accuracy.
+```{r, cache=T}
+decisionTreePrediction <- predict(modelDecisionTree, testData)
+confusionMatrix(testData$classe, decisionTreePrediction)
+```
+
+```{r, cache=T}
+rpart.plot(modelDecisionTree$finalModel)
+```
+
+
+# Training With **Random Forest**
+We fit a predictive model for activity recognition using **Random Forest** algorithm because it automatically selects important variables and is robust to correlated covariates & outliers in general. We will use **10-fold cross validation** when applying the algorithm.  
+```{r, cache = T}
+controlRf <- trainControl(method="cv", 10)
+modelRf <- train(classe ~ ., data=trainData, method="rf", trControl=controlRf, ntree=250)
+modelRf
+```
+Then, we estimate the performance of the model on the validation data set.  
+```{r, cache = T}
+predictRf <- predict(modelRf, testData)
+confusionMatrix(testData$classe, predictRf)
+```
+```{r, cache = T}
+accuracy <- postResample(predictRf, testData$classe)
+accuracy
+oose <- 1 - as.numeric(confusionMatrix(testData$classe, predictRf)$overall[1])
+oose
+```
+The estimated accuracy of the model is 99.37% and the estimated out-of-sample error is 0.62%.
+
+# Prediction with **Random Forest** for Test Dataset
+Now, we apply the model to the original testing dataset. 
+```{r, cache = T}
+result <- predict(modelRf, testCleaned)
+result
+```  
+This results are used for the final project quiz.
+
+# Conclusion
+As we can we from the result, the random forest algorithem outperforms the decision tree in terms of accuracy. We are getting 99.37% in sample accuracy, while the decision tree gives us only less than 50% in sample accuracy.
+
